@@ -35,3 +35,15 @@ button.ghost { background: transparent; color: var(--ink); border: 1px solid var
 input, textarea { width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--line); font: inherit; margin: 6px 0 12px; background: #fff; }
 .menu-btn { position: fixed; left: 16px; top: 16px; z-index: 10; }
 .err { color: #a33; }
+.warn { color: #b06a00; }
+.badge {
+  position: absolute; top: 12px; right: 12px; font-size: 11px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; background: #fff;
+}
+.badge.over { color: #a35a00; border-color: #e3b57a; background: #fdf3e3; }
+.card { position: relative; }
+.band-box { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin: 10px 0; background: #fff; }
+.band-box.over { border-color: #e3b57a; background: #fdf6ec; }
+.band-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.band-table th, .band-table td { text-align: left; padding: 6px 8px; border-bottom: 1px dashed var(--line); }
+select { padding: 10px; border-radius: 12px; border: 1px solid var(--line); font: inherit; margin: 6px 0 12px; background: #fff; }
