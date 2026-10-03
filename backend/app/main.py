@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,6 +6,12 @@ from pydantic import BaseModel
 from app import seed
 from app.db import connect
 from app.engines.claim_lock import claim_allowed, lock_payload, release_if_expired
+from app.modules.price_cap import (
+    create_wish, get_default_cap, set_default_cap, project_row,
+)
+from app.modules.price_cap.judge import (
+    BAND_MODES, ERR_DIRTY_WISH, ERR_INVALID_PRICE, ERR_INVALID_BAND_MODE,
+)
 
 app = FastAPI(title="Wishclaim", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -25,31 +32,44 @@ def sweep(c):
             c.execute("UPDATE wishes SET status=?, claimer=?, claimed_at=?, expires_at=? WHERE id=?",
                       (rel["status"], None, None, None, r["id"]))
 
+def _rows(c, sql, args=()):
+    return [project_row(r) for r in c.execute(sql, args)]
+
 @app.get("/api/health")
 def health(): return {"ok": True, "project": "wishclaim"}
 
 @app.get("/api/wishes")
 def list_wishes():
     c = connect(); sweep(c); c.commit()
-    rows = [dict(r) for r in c.execute("SELECT * FROM wishes ORDER BY id DESC")]; c.close(); return rows
+    rows = _rows(c, "SELECT * FROM wishes ORDER BY id DESC"); c.close(); return rows
 
 @app.get("/api/wishes/{wid}")
 def get_wish(wid: int):
     c = connect(); sweep(c); c.commit()
-    r = c.execute("SELECT * FROM wishes WHERE id=?", (wid,)).fetchone(); c.close()
-    if not r: raise HTTPException(404, "not found")
-    return dict(r)
+    r = c.execute("SELECT * FROM wishes WHERE id=?", (wid,)).fetchone()
+    if not r: c.close(); raise HTTPException(404, "not found")
+    out = project_row(r); c.close(); return out
 
 class WishIn(BaseModel):
     title: str
     note: str = ""
+    price: float | None = None      # 未填估价 => None，字段集合与改造前兼容
+    band_mode: str | None = None    # None/soft/hard；填了估价默认 soft
+
+_BAD_REQUEST = {ERR_DIRTY_WISH, ERR_INVALID_PRICE, ERR_INVALID_BAND_MODE}
 
 @app.post("/api/wishes")
-def create_wish(body: WishIn):
+def create(body: WishIn):
     c = connect()
-    cur = c.execute("INSERT INTO wishes(title,note,status,data_quality) VALUES (?,?,?,?)",
-                    (body.title, body.note, "open", "clean"))
-    c.commit(); wid = cur.lastrowid; c.close(); return {"id": wid}
+    before = c.execute("SELECT COUNT(*) n FROM wishes").fetchone()["n"]
+    res = create_wish(c, body.title, body.note, body.price, body.band_mode)
+    if not res["ok"]:
+        c.rollback(); after = c.execute("SELECT COUNT(*) n FROM wishes").fetchone()["n"]; c.close()
+        assert after == before, "hard reject must not insert a row"
+        status = 400 if res["code"] in _BAD_REQUEST else 422
+        raise HTTPException(status, res["code"])
+    c.commit(); wid = res["id"]; warning = res["warning"]; c.close()
+    return {"id": wid, "warning": warning}
 
 class ClaimIn(BaseModel):
     claimer: str
@@ -90,12 +110,12 @@ def fulfill(wid: int):
 @app.get("/api/mine")
 def mine(claimer: str):
     c = connect(); sweep(c); c.commit()
-    rows = [dict(r) for r in c.execute("SELECT * FROM wishes WHERE claimer=?", (claimer,))]; c.close(); return rows
+    rows = _rows(c, "SELECT * FROM wishes WHERE claimer=?", (claimer,)); c.close(); return rows
 
 @app.get("/api/done")
 def done():
     c = connect()
-    rows = [dict(r) for r in c.execute("SELECT * FROM wishes WHERE status='fulfilled'")]; c.close(); return rows
+    rows = _rows(c, "SELECT * FROM wishes WHERE status='fulfilled'"); c.close(); return rows
 
 @app.get("/api/settings")
 def settings():
@@ -108,3 +128,33 @@ def rules():
         "ttl": "认领超时未核销则自动释放",
         "fulfill": "核销后状态变为 fulfilled",
     }
+
+# ---- 价位带：现行默认上限（源一：settings，可维护；只影响新发愿望）----
+
+@app.get("/api/price-cap")
+def price_cap_get():
+    c = connect(); cap = get_default_cap(c); c.close()
+    return {"cap": cap, "modes": list(BAND_MODES)}
+
+class CapIn(BaseModel):
+    cap: float
+
+@app.put("/api/price-cap")
+def price_cap_put(body: CapIn):
+    if isinstance(body.cap, bool) or not math.isfinite(body.cap) or body.cap <= 0:
+        raise HTTPException(400, ERR_INVALID_PRICE)
+    c = connect(); set_default_cap(c, body.cap); c.commit(); c.close()
+    return {"cap": body.cap}
+
+# ---- 价位带：写入带（源二：每条愿望冻结的 band_snapshot，绝不回刷）----
+
+@app.get("/api/price-cap/bands")
+def price_cap_bands():
+    """规则页「该愿望写入带」列表，只投影历史快照。"""
+    c = connect(); sweep(c); c.commit()
+    rows = _rows(c, "SELECT * FROM wishes ORDER BY id DESC")
+    c.close()
+    return [
+        {"id": r["id"], "title": r["title"], "status": r["status"], "band": r["band"]}
+        for r in rows if r["band"] is not None
+    ]

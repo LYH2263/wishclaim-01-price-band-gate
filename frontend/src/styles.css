@@ -35,3 +35,29 @@ button.ghost { background: transparent; color: var(--ink); border: 1px solid var
 input, textarea { width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--line); font: inherit; margin: 6px 0 12px; background: #fff; }
 .menu-btn { position: fixed; left: 16px; top: 16px; z-index: 10; }
 .err { color: #a33; }
+.warn { color: #b06a1f; }
+
+/* 价位带角标（墙卡） */
+.card { position: relative; }
+.corner {
+  position: absolute; top: 12px; right: 12px; max-width: 55%;
+  font-size: 11px; line-height: 1.3; padding: 3px 8px; border-radius: 999px;
+  color: #fff; text-align: center;
+}
+.corner-ok { background: #7fae8f; }
+.corner-warn { background: #d4882a; }
+
+/* 详情写入带 */
+.band-box { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin: 10px 0; }
+.band-ok { background: #eef6f0; }
+.band-warn { background: #fdf1e2; border-color: #e4c08a; }
+.band-box p { margin: 4px 0; }
+
+.mode-row { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.mode-row input { width: auto; margin: 0 6px 0 0; }
+
+/* 规则页写入带表 */
+.band-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.band-table th, .band-table td { border-bottom: 1px dashed var(--line); padding: 6px 8px; text-align: left; }
+.band-table th { color: var(--muted); font-weight: 600; }
+
